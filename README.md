@@ -51,7 +51,7 @@ sudo apt install libboost-all-dev libzmq5 libyaml-cpp-dev libjsoncpp-dev libprot
 # EtherCAT Integration
 
 ## ZMQ-Protobuf Server
-Using the superbuild is possible to activate ec_master_test, ec_master_advr and soem_advr repositories:
+Using the superbuild is possible to download and build ec_master_test, ec_master_advr and soem_advr repositories:
 
 ![firstImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/ec_master_advr%26test.png)
 
@@ -61,7 +61,7 @@ Here the repositories:
 
 [https://gitlab.advr.iit.it/xeno-ecat/ec_master_test](https://gitlab.advr.iit.it/xeno-ecat/ec_master_test)
 
-Note: Use this branch MultiDOF-superBuildInt
+Note: Use this branch MultiDOF-superBuildInt.
 
 [https://gitlab.advr.iit.it/xeno-ecat/ecat_master_advr](https://gitlab.advr.iit.it/xeno-ecat/ecat_master_advr)
 
@@ -78,7 +78,7 @@ Install python:
 ```
 sudo apt-get install python3.7
 Note: Useful to select the python version
-sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.6 1
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.6 1 ("if you have it or insert others")
 sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 2
 Selection version:
 sudo update-alternatives --config python3
@@ -125,3 +125,4 @@ gedit ~/.local/share/jupyter/kernels/ecat-repl-env/kernel.json
  "language": "python"
 }
 ```
+# RUN
