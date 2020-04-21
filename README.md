@@ -50,4 +50,10 @@ sudo apt install libboost-all-dev libzmq5 libyaml-cpp-dev libjsoncpp-dev libprot
 
 # EtherCAT Integration
 
+Using the superbuild is possible to activate the following repositories:
+
+![firstImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/ec_master_advr%26test.png)
+![secondImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/soem_advr.png)
+
+
 
