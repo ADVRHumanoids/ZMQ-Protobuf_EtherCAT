@@ -50,7 +50,7 @@ sudo apt install libboost-all-dev libzmq5 libyaml-cpp-dev libjsoncpp-dev libprot
 
 # EtherCAT Integration
 
-## Server
+## ZMQ-Protobuf Server
 Using the superbuild is possible to activate ec_master_test, ec_master_advr and soem_advr repositories:
 
 ![firstImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/ec_master_advr%26test.png)
@@ -67,8 +67,61 @@ Note: Use this branch MultiDOF-superBuildInt
 
 [https://gitlab.advr.iit.it/xeno-ecat/soem_advr](https://gitlab.advr.iit.it/xeno-ecat/soem_advr)
 
-## Client
+## ZMQ-Protobuf Client
 
+Download the client here:
 
+[https://gitlab.advr.iit.it/python-stuff/Ecat-Repl](https://gitlab.advr.iit.it/python-stuff/Ecat-Repl)
 
+Install python:
 
+```
+sudo apt-get install python3.7
+Note: Useful to select the python version
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.6 1
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.7 2
+Selection version:
+sudo update-alternatives --config python3
+python3 -V
+```
+
+Install Python Virtual Environment:
+
+```
+sudo apt install python3-venv
+
+```
+Move into Ecat-Repl directory
+
+```
+python3 -m venv Ecat-Repl-env
+source Ecat-Repl-env/bin/activate
+pip3 install -r requirements.txt
+make install-dev
+```
+Install jupyter 
+```
+pip3 install jupyterlab
+pip3 install notebook
+```
+Add the enviroment to Jupyter 
+```
+pip3 install --user ipykernel
+python3 -m ipykernel install --user --name=Ecat-Repl-env
+```
+Note: Verify the associtation is corret doing:
+
+```
+gedit ~/.local/share/jupyter/kernels/ecat-repl-env/kernel.json 
+{
+ "argv": [
+  "PATH_OF_/Ecat-Repl/Ecat-Repl-env/bin/python3",
+  "-m",
+  "ipykernel_launcher",
+  "-f",
+  "{connection_file}"
+ ],
+ "display_name": "Ecat-Repl-env",
+ "language": "python"
+}
+```
