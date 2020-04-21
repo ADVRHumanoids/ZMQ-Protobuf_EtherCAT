@@ -56,5 +56,14 @@ Using the superbuild is possible to activate the following repositories:
 
 ![secondImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/soem_advr.png)
 
+Here the repositories:
+
+[https://gitlab.advr.iit.it/xeno-ecat/ec_master_test](https://gitlab.advr.iit.it/xeno-ecat/ec_master_test)
+
+Note: Use this branch MultiDOF-superBuildInt
+
+[https://gitlab.advr.iit.it/xeno-ecat/ecat_master_advr](https://gitlab.advr.iit.it/xeno-ecat/ecat_master_advr)
+[https://gitlab.advr.iit.it/xeno-ecat/soem_advr](https://gitlab.advr.iit.it/xeno-ecat/soem_advr)
+
 
 
