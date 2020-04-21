@@ -141,4 +141,12 @@ move into: http://localhost:8888/tree/Ethercat/Ecat-Repl/notebooks
 Then start for istance: ft6_msp32.ipynb .
 
 # RESULT
+![firstImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/Master-Slave.png)
 
+STOP MASTER:
+
+![secondImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/stop.png)
+
+START MASTER:
+
+![thirdImage](https://github.com/ADVRHumanoids/ZMQ-Protobuf_EtherCAT/blob/master/img/start.png)
