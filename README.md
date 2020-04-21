@@ -126,3 +126,19 @@ gedit ~/.local/share/jupyter/kernels/ecat-repl-env/kernel.json
 }
 ```
 # RUN
+
+Run the master:
+```
+cd ~/MultiDoF-superbuild/build/external/ec_master_test/examples/repl/
+./repl /home/user/MultiDoF-superbuild/external/ec_master_test/configs/config.yaml
+```
+Run the jupyter:
+```
+jupyter notebook
+```
+move into: http://localhost:8888/tree/Ethercat/Ecat-Repl/notebooks
+
+Then start for istance: ft6_msp32.ipynb .
+
+# RESULT
+
