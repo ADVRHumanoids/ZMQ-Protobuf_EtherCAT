@@ -9,6 +9,8 @@
 
 #include "zmq.hpp"
 
+#include <unistd.h>
+
 
 int main(int argc, char *argv[])
 {
@@ -60,7 +62,14 @@ int main(int argc, char *argv[])
         memcpy ((void *) message.data(), encoded_message.c_str(), encoded_message.size());
         publisher.send(message);
         
+            
+        std::cout << zmq_strerror (errno) << std::endl;
+
+        
         if (idx == 12) {
+               // zmq::message_t update;
+        //publisher.recv(&update);
+        usleep(10000000);
         break;
         }
 

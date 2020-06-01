@@ -1,0 +1,242 @@
+// [START declaration]
+syntax = "proto2";
+package iit.advr;
+
+//HERE
+
+//import "google/protobuf/timestamp.proto";
+// [END declaration]
+
+// [START messages]
+message Header {
+    optional string     str_id = 1;
+    //HERE
+    //optional google.protobuf.Timestamp  stamp  = 2;
+    optional int32      index  = 3;
+}
+
+message Vector2d {
+    required double x = 1;
+    required double y = 2;
+}
+
+message Gains {
+
+    enum Type { 
+        POSITION    = 0x3B;
+        VELOCITY    = 0x71;
+        IMPEDANCE   = 0xD4;
+    }
+    // Identifies which field is filled in.
+    required Type   type = 1;
+    
+    required double pos_kp = 2;
+    required double pos_kd = 3;
+    optional double tor_kp = 4;
+    optional double tor_ki = 5;
+    optional double tor_kd = 6;
+    
+}
+
+message Slave_objd
+{
+    
+    required int32  index       = 1;
+    required int32  subindex    = 2;
+    required int32  datatype    = 3;
+    required int32  bitlength   = 4;
+    required int32  access      = 5;
+    required string name        = 6;
+    //required string data        = 7;
+}
+
+message KeyValStr
+{
+    required string name = 1;
+    required string value = 2;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+message Trajectory_cmd {
+
+    enum Type { 
+        HOMING      = 1;
+        SINE        = 2;
+        SMOOTHER    = 3;
+
+    }
+    message Homing_par
+    {
+        repeated double     x = 1;
+    }
+    message Period_par
+    {
+        required double freq = 1;
+        required double ampl = 2;
+        required double teta = 3;
+        required double secs = 4;
+    } 
+    message Smooth_par
+    {
+        repeated double     x = 1;
+        repeated double     y = 2;
+    }
+    required Type       type        = 1;
+    required string     name        = 2;
+    required int32      board_id    = 3;
+    optional Smooth_par smooth_par  = 4;
+    optional Period_par period_par  = 5;
+    optional Homing_par homing_par  = 6;
+}
+
+message Trj_queue_cmd {
+
+    enum Type { 
+        PUSH_QUE    = 1;
+        EMPTY_QUE   = 2;
+    }
+    required Type       type        = 1;
+    repeated string     trj_names   = 2;
+    
+}
+
+message Repl_hdr {
+
+}
+
+message Ctrl_cmd {
+    
+    enum Type {
+        CTRL_TEST_DONE          = 1;
+        CTRL_TEST_ERROR         = 2;
+        CTRL_DAC_TUNE           = 3;
+        CTRL_REMOVE_TORQUE_OFFS = 4;
+        CTRL_SET_ZERO_POSITION  = 5;
+        CTRL_FAN                = 6;
+        CTRL_LED                = 7;
+        CTRL_SANDBOX            = 8;
+        CTRL_REF_FILTER         = 9;
+        CTRL_POWER_MOD          = 10;
+        CTRL_CMD_START          = 11;
+        CTRL_CMD_STOP           = 12;
+        CTRL_SET_HOME           = 13;
+        CTRL_SET_MIN_POSITION   = 14;
+        CTRL_SET_MAX_POSITION   = 15;        
+        CTRL_RUN_TORQUE_CALIB   = 16;        
+        CTRL_SET_GAINS          = 17;
+        CTRL_SET_POSITION       = 18;
+        CTRL_SET_VELOCITY       = 19;
+        CTRL_SET_TORQUE         = 20;
+        CTRL_SET_CURRENT        = 21;
+    }
+    // Identifies which field is filled in.
+    required Type   type        = 1;
+    required int32  board_id    = 2;
+
+    optional float  value       = 3;
+    // CTRL_CMD_START could set pdo gains
+    optional Gains  gains       = 4;
+}
+
+message Flash_cmd {
+
+    enum Type { 
+        SAVE_PARAMS_TO_FLASH    = 1;
+        LOAD_PARAMS_FROM_FLASH  = 2;
+        LOAD_DEFAULT_PARAMS     = 3;
+        
+    }
+    // Identifies which field is filled in.
+    required Type   type        = 1;
+    required int32  board_id    = 2;
+}
+
+message Slave_SDO_cmd {
+    // Identifies which field is filled in.
+    required int32     board_id    = 1;
+    repeated string    rd_sdo      = 2;
+    repeated KeyValStr wr_sdo      = 3;
+    
+}
+
+message Slave_SDO_info {
+
+    enum Type { 
+        SDO_NAME    = 1;
+        SDO_OBJD    = 2;
+    }
+
+    required Type   type        = 1;
+    required int32  board_id    = 2;
+}
+
+message Ecat_Master_cmd {
+
+    enum Type { 
+        START_MASTER        = 1;
+        STOP_MASTER         = 2;
+        GET_SLAVES_DESCR    = 3;        
+    }
+    // Identifies which field is filled in.
+    required Type      type    = 1;
+    repeated KeyValStr args    = 2;
+}
+
+message FOE_Master {
+
+    required string filename    = 1;
+    required uint32 password    = 2; 
+    optional string mcu_type    = 3;
+    optional int32  slave_pos   = 4;
+    optional int32  board_id    = 5;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+///////////////////////////////////////////////////////////////////////////////
+
+enum CmdType { 
+    TRJ_CMD         = 1;
+    CTRL_CMD        = 2;
+    FLASH_CMD       = 3;
+    ECAT_MASTER_CMD = 4;    
+    FOE_MASTER      = 5;
+    TRJ_QUEUE_CMD   = 6;
+    SLAVE_SDO_CMD   = 7;
+    SLAVE_SDO_INFO  = 8;
+}
+
+message Repl_cmd {
+
+    // Identifies which field is filled in.
+    required CmdType            type = 1;
+    optional Header             header = 2;
+    // One of the following will be filled in.
+    optional Trajectory_cmd     trajectory_cmd  =  3;
+    optional Ctrl_cmd           ctrl_cmd        =  4;
+    optional Flash_cmd          flash_cmd       =  5;
+    optional Ecat_Master_cmd    ecat_master_cmd =  6;
+    optional FOE_Master         foe_master      =  7;
+    optional Trj_queue_cmd      trj_queue_cmd   =  8;
+    optional Slave_SDO_cmd      slave_sdo_cmd   =  9;
+    optional Slave_SDO_info     slave_sdo_info  = 10;
+        
+}
+
+message Cmd_reply {
+
+   enum Type { 
+        ACK  = 1;
+        NACK = 2;
+    }
+    // Identifies which field is filled in.
+    required Type           type        = 1;
+    required CmdType        cmd_type    = 2;
+    required string         msg         = 3;
+    
+    optional Header         header      = 4;
+    optional string         pdo         = 5;
+    
+}
+// [END messages]
