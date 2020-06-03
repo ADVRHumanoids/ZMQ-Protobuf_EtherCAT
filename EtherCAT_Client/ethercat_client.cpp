@@ -16,6 +16,19 @@ using namespace iit::advr;
 using namespace zmq;
 using namespace std;
 
+void checkReply(Cmd_reply &pb_reply)
+{
+    if(pb_reply.type()==Cmd_reply::ACK)
+    {
+        if(pb_reply.cmd_type()==CmdType::ECAT_MASTER_CMD)
+        {
+            cout << "ECAT_MASTER_CMD " << endl;
+            cout << pb_reply.msg() << endl;
+        }
+    }   
+    else
+       cout << "NACK" << endl;  
+}
 
 int main(int argc, char *argv[])
 {
@@ -36,8 +49,11 @@ int main(int argc, char *argv[])
         Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
         Header *ecat_header_cmd =new Header();
         Repl_cmd pb_msg;
+        Cmd_reply pb_reply;
         std::string pb_msg_serialized;
         multipart_t multipart;
+        
+        zmq::message_t update;
 
 
         if(idx==0)
@@ -58,9 +74,12 @@ int main(int argc, char *argv[])
             multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
             multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
             multipart.send(publisher);
+            
+            publisher.recv(&update);
+            pb_reply.ParseFromString(update.to_string());
+            checkReply(pb_reply);
         }
 
-        sleep(8);
         
         if(idx==1)
         {
@@ -71,6 +90,10 @@ int main(int argc, char *argv[])
             multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
             multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
             multipart.send(publisher);
+            
+            publisher.recv(&update);
+            pb_reply.ParseFromString(update.to_string());
+            checkReply(pb_reply);
         }
         
         //         std::cout << zmq_strerror (errno) << std::endl;
