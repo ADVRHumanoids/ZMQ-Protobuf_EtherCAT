@@ -11,6 +11,10 @@
 #include "zmq.hpp"
 #include <zmq_addon.hpp>
 #include <assert.h>
+#define NUMOP 4
+
+enum CMD_E { STOP_MASTER, START_MASTER, GET_SLAVES_DESCR,FOE_MASTER};
+
 
 using namespace iit::advr;
 using namespace zmq;
@@ -47,6 +51,10 @@ int main(int argc, char *argv[])
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         
         Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
+        FOE_Master *foe_master= new FOE_Master();
+        string *path= new string();
+        string *mcu= new string();
+        
         Header *ecat_header_cmd =new Header();
         Repl_cmd pb_msg;
         Cmd_reply pb_reply;
@@ -56,7 +64,7 @@ int main(int argc, char *argv[])
         zmq::message_t update;
 
 
-        if(idx==0)
+        if(idx==CMD_E::STOP_MASTER)
         {
             pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
 
@@ -81,11 +89,53 @@ int main(int argc, char *argv[])
         }
 
         
-        if(idx==1)
+        if(idx==CMD_E::START_MASTER)
         {
             pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
             ecat_master_cmd->set_type(Ecat_Master_cmd::START_MASTER);
             pb_msg.set_allocated_ecat_master_cmd(ecat_master_cmd);
+            pb_msg.SerializeToString(&pb_msg_serialized);
+            multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
+            multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
+            multipart.send(publisher);
+            
+            publisher.recv(&update);
+            pb_reply.ParseFromString(update.to_string());
+            checkReply(pb_reply);
+        }
+        
+        
+        if(idx==CMD_E::GET_SLAVES_DESCR)
+        {
+            pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
+            ecat_master_cmd->set_type(Ecat_Master_cmd::GET_SLAVES_DESCR);
+            pb_msg.set_allocated_ecat_master_cmd(ecat_master_cmd);
+            pb_msg.SerializeToString(&pb_msg_serialized);
+            multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
+            multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
+            multipart.send(publisher);
+            
+            publisher.recv(&update);
+            pb_reply.ParseFromString(update.to_string());
+            checkReply(pb_reply);
+        }
+        
+        if(idx==CMD_E::FOE_MASTER)
+        {
+            path[0]="/home/user/MultiDoF-superbuild/external/ec_master_test/examples/fw_update/fw_test_bug_friction_252/fw_test_bug_friction_252_after/";
+            mcu[0]="c28";
+            path[0]=path[0]+"cent_AC_c28.bin";
+            
+            cout << "PATH:" << path[0] << endl;
+            cout << "MCU: " << mcu[0] << endl;
+            
+            
+            pb_msg.set_type(CmdType::FOE_MASTER);
+            foe_master->set_allocated_filename(path);
+            foe_master->set_password(0xDAD0);
+            foe_master->set_allocated_mcu_type(mcu);
+            foe_master->set_slave_pos(1);
+            pb_msg.set_allocated_foe_master(foe_master);
             pb_msg.SerializeToString(&pb_msg_serialized);
             multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
             multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
@@ -102,7 +152,7 @@ int main(int argc, char *argv[])
         
         publisher.disconnect("tcp://localhost:5555");
         publisher.close();
-        if (idx == 2) {
+        if (idx == NUMOP) {
         break;
         }
 
