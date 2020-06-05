@@ -1,0 +1,37 @@
+sudo apt-get install nfs-kernel-server
+
+
+sudo gedit /etc/exports
+/home/user/Ethercat       *(rw,sync,no_subtree_check) 
+
+sudo service nfs-kernel-server restart
+
+ssh embedded@advantech.local
+
+ssh -X embedded@advantech.local
+
+
+yes
+
+embedded: pitagora
+root: cartesio
+
+cd some_scripts/
+
+gedit mount_usr.sh
+
+sudo umount nfs
+
+sudo mount 10.255.32.88:/home/user/MultiDoF-superbuild /home/embedded/nfs/
+sudo mount 10.255.32.88:/home/user/Ethercat /home/embedded/nfs/
+cd nfs/
+
+
+config.yaml ---> use_ecat_pos_as_id : true //COMMENT
+
+
+http://advantech.local:9999/
+
+password: pitagora.
+
+

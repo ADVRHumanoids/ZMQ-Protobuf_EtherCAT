@@ -44,3 +44,12 @@ target_include_directories(ethercat_client2 PUBLIC ${ZeroMQ_INCLUDE_DIR})
 ## at the 0mq library to our link directive
 target_link_libraries(ethercat_client2 PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ecat_master_pb)
 
+
+add_executable(ethercat_client3 ethercat_client3.cpp)
+
+## add the include directory to our compile directives
+target_include_directories(ethercat_client3 PUBLIC ${ZeroMQ_INCLUDE_DIR})
+## at the 0mq library to our link directive
+target_link_libraries(ethercat_client3 PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ecat_master_pb)
+
+

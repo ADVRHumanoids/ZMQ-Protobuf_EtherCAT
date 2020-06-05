@@ -11,7 +11,7 @@
 #include "zmq.hpp"
 #include <zmq_addon.hpp>
 #include <assert.h>
-#define NUMOP 4
+#define NUMOP 3
 
 enum CMD_E { STOP_MASTER, START_MASTER, GET_SLAVES_DESCR,FOE_MASTER};
 
@@ -40,14 +40,15 @@ int main(int argc, char *argv[])
    
     std::string m_cmd="MASTER_CMD";
     uint32_t idx(0);
-    
+    //char uri[]="tcp://localhost:5555";
+    char uri[]= "tcp://advantech.local:5555";
    
     while(1) {
         
         zmq::context_t context{1};
         zmq::socket_t publisher{context, ZMQ_REQ};
         
-        publisher.connect("tcp://localhost:5555");
+        publisher.connect(uri);
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         
         Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
@@ -150,7 +151,7 @@ int main(int argc, char *argv[])
 
         ++idx;
         
-        publisher.disconnect("tcp://localhost:5555");
+        publisher.disconnect(uri);
         publisher.close();
         if (idx == NUMOP) {
         break;
