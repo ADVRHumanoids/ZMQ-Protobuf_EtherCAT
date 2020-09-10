@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
             multipart.send(publisher);
             
             publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
+            pb_reply.ParseFromString((char *)update.data());
             checkReply(pb_reply);
         }
         
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
             multipart.send(publisher);
             
             publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
+            pb_reply.ParseFromString((char *)update.data());
             checkReply(pb_reply);
         }
         
@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
             multipart.send(publisher);
             
             publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
+            pb_reply.ParseFromString((char *)update.data());
             checkReply(pb_reply);
         }
         
@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
             multipart.send(publisher);
             
             publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
+            pb_reply.ParseFromString((char *)update.data());
             checkReply(pb_reply);
         }
         
@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
             multipart.send(publisher);
             
             publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
+            pb_reply.ParseFromString((char *)update.data());
             checkReply(pb_reply);
         }
  
@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
             multipart.send(publisher);
             
             publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
+            pb_reply.ParseFromString((char *)update.data());
             checkReply(pb_reply);
         }
 

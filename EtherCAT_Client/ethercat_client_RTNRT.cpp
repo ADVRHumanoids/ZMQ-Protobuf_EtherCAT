@@ -24,6 +24,9 @@
 #include <zmq_addon.hpp>
 #include <assert.h>
 
+#include <yaml-cpp/yaml.h>
+
+
 pthread_t rt1, nrt;
 #define XDDP_PORT_LABEL  "xddp-demo"
 
@@ -43,7 +46,9 @@ static void *realtime_thread(void *arg)
 {
         struct rtipc_port_label plabel;
         struct sockaddr_ipc saddr;
-        char buf[128];
+        struct timespec ts;
+        
+        char buf[4096];
         int ret, s;
         /*
          * Get a datagram socket to bind to the RT endpoint. Each
@@ -60,8 +65,8 @@ static void *realtime_thread(void *arg)
          * binding, in addition to the port number (if given).
          */
         strcpy(plabel.label, XDDP_PORT_LABEL);
-        ret = setsockopt(s, SOL_XDDP, XDDP_LABEL,
-                         &plabel, sizeof(plabel));
+        ret = setsockopt(s, SOL_XDDP, XDDP_LABEL,&plabel, sizeof(plabel));
+        
         if (ret)
                 fail("setsockopt");
         /*
@@ -86,8 +91,15 @@ static void *realtime_thread(void *arg)
                 /* Get packets relayed by the regular thread */
                 ret = recvfrom(s, buf, sizeof(buf), 0, NULL, 0);
                 if (ret <= 0)
-                        fail("recvfrom");
-                printf("%s: \"%.*s\" relayed by peer\n", __FUNCTION__, ret, buf);
+                    fail("recvfrom");
+
+                std::cout << buf << std::endl;
+                
+                //printf("%s: \"%.*s\" relayed by peer\n", __FUNCTION__, ret, buf);
+                ts.tv_sec = 0;
+                ts.tv_nsec = 500000000; /* 500 ms */
+                clock_nanosleep(CLOCK_REALTIME, 0, &ts, NULL);
+                
         }
         return NULL;
 }
@@ -95,15 +107,13 @@ static void *realtime_thread(void *arg)
 static void *regular_thread(void *arg)
 {
         char *devname;
-        int fd, ret;
+        int fd, ret,timeout;
         if (asprintf(&devname, "/proc/xenomai/registry/rtipc/xddp/%s",XDDP_PORT_LABEL) < 0)
                 fail("asprintf");
         fd = open(devname, O_WRONLY | O_NONBLOCK);
         free(devname);
         
         std::string m_cmd="MASTER_CMD";
-        Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
-        Repl_cmd pb_msg;
         std::string pb_msg_serialized;
         multipart_t multipart;
         zmq::message_t update;
@@ -112,30 +122,56 @@ static void *regular_thread(void *arg)
         if (fd < 0)
                 fail("open");
         
+         zmq::context_t context{1};
+         zmq::socket_t publisher{context, ZMQ_REQ};
+         timeout=100; 
+         publisher.setsockopt(ZMQ_RCVTIMEO,timeout);
+        
+         publisher.connect(uri);
+        
+        YAML::Node slaves_info;
+        bool done=false;
+        
         for (;;) {
             
-            zmq::context_t context{1};
-            zmq::socket_t publisher{context, ZMQ_REQ};
-        
-            publisher.connect(uri);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            if(!done)
+            {
+                Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
+                Repl_cmd pb_msg;
+                pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
+                ecat_master_cmd->set_type(Ecat_Master_cmd::GET_SLAVES_DESCR);
+                pb_msg.set_allocated_ecat_master_cmd(ecat_master_cmd);
+                pb_msg.SerializeToString(&pb_msg_serialized);
+                multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
+                multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
+                multipart.send(publisher);
+     
+                if(publisher.recv(&update))
+                {
+                    done=true;
+                    pb_reply.ParseFromArray(update.data(),update.size());
+                }
+            }
             
-            pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
-            ecat_master_cmd->set_type(Ecat_Master_cmd::GET_SLAVES_DESCR);
-            pb_msg.set_allocated_ecat_master_cmd(ecat_master_cmd);
-            pb_msg.SerializeToString(&pb_msg_serialized);
-            multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
-            multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
-            multipart.send(publisher);
+            if(done)
+            { 
+                /* Relay the message to realtime_thread1. */
+                slaves_info = YAML::Load(pb_reply.msg().c_str());
+                auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
+                for(auto [key,val]:slave_info_map)
+                {
+                    for(auto [ikey,ival]:val)
+                    {
+                        if(ival==21)
+                        {
+                        ret = write(fd, &key,sizeof(key));
+                        if (ret <= 0)
+                            fail("write");
+                        }
+                    }
+                }
+            }
             
-            publisher.recv(&update);
-            pb_reply.ParseFromString(update.to_string());
-       
-            
-            /* Relay the message to realtime_thread1. */
-            ret = write(fd, pb_reply.msg().c_str(), pb_reply.msg().size());
-            if (ret <= 0)
-                    fail("write");
         }
         return NULL;
 }
