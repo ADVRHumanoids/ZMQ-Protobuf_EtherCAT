@@ -5,6 +5,12 @@ cmake_minimum_required(VERSION 3.0)
 ## use this to globally use C++14 with in our project
 set(CMAKE_CXX_STANDARD 14)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+find_package(Xenomai QUIET)
+
+option(ENABLE_XENO FALSE)
+
 find_package(Protobuf REQUIRED)
 add_subdirectory(protobuf/)
 
@@ -60,3 +66,12 @@ target_include_directories(ethercat_client4 PUBLIC ${ZeroMQ_INCLUDE_DIR})
 ## at the 0mq library to our link directive
 target_link_libraries(ethercat_client4 PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ecat_master_pb)
 
+
+if(${ENABLE_XENO})
+    add_executable(ethercat_client_RTNRT ethercat_client_RTNRT.cpp)
+    ## add the include directory to our compile directives
+    target_include_directories(ethercat_client_RTNRT PUBLIC ${ZeroMQ_INCLUDE_DIR})
+    ## at the 0mq library to our link directive
+    target_link_libraries(ethercat_client_RTNRT PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ecat_master_pb)
+    set_xeno_flags(ethercat_client_RTNRT)
+endif()
