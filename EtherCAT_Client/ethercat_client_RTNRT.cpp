@@ -15,27 +15,18 @@
 #include <thread>
 #include <unistd.h>
 
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include "repl_cmd.pb.h"
-
-
-#include "zmq.hpp"
-#include <zmq_addon.hpp>
 #include <assert.h>
 
 #include <yaml-cpp/yaml.h>
+
+#include "rt_thread.h"
+#include "zmq_thread.h"
 
 
 pthread_t rt1, nrt;
 #define XDDP_PORT_LABEL  "xddp-demo"
 
-char uri[]= "tcp://advantech.local:5555";
-
-using namespace iit::advr;
-using namespace zmq;
-using namespace std;
-
+bool verbose=true;
 
 static void fail(const char *reason)
 {
@@ -113,63 +104,34 @@ static void *regular_thread(void *arg)
         fd = open(devname, O_WRONLY | O_NONBLOCK);
         free(devname);
         
-        std::string m_cmd="MASTER_CMD";
-        std::string pb_msg_serialized;
-        multipart_t multipart;
-        zmq::message_t update;
-        Cmd_reply pb_reply;
-        
         if (fd < 0)
                 fail("open");
         
-         zmq::context_t context{1};
-         zmq::socket_t publisher{context, ZMQ_REQ};
-         timeout=100; 
-         publisher.setsockopt(ZMQ_RCVTIMEO,timeout);
-        
-         publisher.connect(uri);
+         
         
         YAML::Node slaves_info;
         bool done=false;
         
         for (;;) {
             
-            if(!done)
-            {
-                Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
-                Repl_cmd pb_msg;
-                pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
-                ecat_master_cmd->set_type(Ecat_Master_cmd::GET_SLAVES_DESCR);
-                pb_msg.set_allocated_ecat_master_cmd(ecat_master_cmd);
-                pb_msg.SerializeToString(&pb_msg_serialized);
-                multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
-                multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
-                multipart.send(publisher);
-     
-                if(publisher.recv(&update))
-                {
-                    done=true;
-                    pb_reply.ParseFromArray(update.data(),update.size());
-                }
-            }
-            
+
             if(done)
             { 
                 /* Relay the message to realtime_thread1. */
-                slaves_info = YAML::Load(pb_reply.msg().c_str());
-                auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
-                for(auto [key,val]:slave_info_map)
-                {
-                    for(auto [ikey,ival]:val)
-                    {
-                        if(ival==21)
-                        {
-                        ret = write(fd, &key,sizeof(key));
-                        if (ret <= 0)
-                            fail("write");
-                        }
-                    }
-                }
+                //slaves_info = YAML::Load(pb_reply.msg().c_str());
+                //auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
+                //for(auto [key,val]:slave_info_map)
+                //{
+                //    for(auto [ikey,ival]:val)
+                //    {
+                //        if(ival==21)
+                //        {
+                //        ret = write(fd, &key,sizeof(key));
+                //        if (ret <= 0)
+                //         fail("write");
+                //        }
+                //    }
+                //}
             }
             
         }
