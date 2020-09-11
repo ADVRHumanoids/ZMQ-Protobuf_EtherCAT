@@ -20,6 +20,11 @@ find_library(ecat_master_pb
     HINTS "${CMAKE_INSTALL_PREFIX}/lib"
 )
 
+find_library(ecat_master_nrt
+    NAMES ecat_master_nrt.a
+    HINTS "${CMAKE_CURRENT_BINARY_DIR}/../../ecat_master_advr/"
+)
+
 ## load in pkg-config support
 find_package(PkgConfig)
 ## use pkg-config to get hints for 0mq locations
@@ -78,12 +83,12 @@ target_include_directories(ethercat_client4 PUBLIC ${ZeroMQ_INCLUDE_DIR})
 ## at the 0mq library to our link directive
 target_link_libraries(ethercat_client4 PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ${ecat_master_pb})
 
-
 if(${ENABLE_XENO})
     add_executable(ethercat_client_RTNRT ethercat_client_RTNRT.cpp)
     ## add the include directory to our compile directives
     target_include_directories(ethercat_client_RTNRT PUBLIC ${ZeroMQ_INCLUDE_DIR})
     ## at the 0mq library to our link directive
-    target_link_libraries(ethercat_client_RTNRT PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ${ecat_master_pb} -lyaml-cpp)
+    target_link_libraries(ethercat_client_RTNRT PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ${ecat_master_pb} -lyaml-cpp PRIVATE ${ecat_master_nrt})
     set_xeno_flags(ethercat_client_RTNRT)
 endif()
+

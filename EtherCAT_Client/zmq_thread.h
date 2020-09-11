@@ -16,7 +16,7 @@
 char uri[]= "tcp://advantech.local:5555";
 using namespace zmq;
 using namespace std;
-
+using namespace iit::advr;
 ////////////////////////////////////////////////////
 //
 //

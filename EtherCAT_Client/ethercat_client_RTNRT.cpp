@@ -19,160 +19,142 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include "cxxopts.hpp"
+#include <test_common.h>
+
 #include "rt_thread.h"
 #include "zmq_thread.h"
 
 
-pthread_t rt1, nrt;
-#define XDDP_PORT_LABEL  "xddp-demo"
+/*
+ * Use protobuf msg iit::advr::Repl_cmd
+ * - set type ad iit::advr::CmdType::CTRL_CMD
+ * - set header
+ * 
+ */
+#define SIG_TEST 
 
-bool verbose=true;
+std::random_device rd;     // only used once to initialise (seed) engine
+std::mt19937 rng(rd());    // random-number engine used (Mersenne-Twister in this case)
+//std::uniform_int_distribution<int> uni(0,10); // guaranteed unbiased
+std::uniform_real_distribution<double> uni(0,10);
 
-static void fail(const char *reason)
-{
-        perror(reason);
-        exit(EXIT_FAILURE);
-}
-static void *realtime_thread(void *arg)
-{
-        struct rtipc_port_label plabel;
-        struct sockaddr_ipc saddr;
-        struct timespec ts;
-        
-        char buf[4096];
-        int ret, s;
-        /*
-         * Get a datagram socket to bind to the RT endpoint. Each
-         * endpoint is represented by a port number within the XDDP
-         * protocol namespace.
-         */
-        s = socket(AF_RTIPC, SOCK_DGRAM, IPCPROTO_XDDP);
-        if (s < 0) {
-                perror("socket");
-                exit(EXIT_FAILURE);
-        }
-        /*
-         * Set a port label. This name will be registered when
-         * binding, in addition to the port number (if given).
-         */
-        strcpy(plabel.label, XDDP_PORT_LABEL);
-        ret = setsockopt(s, SOL_XDDP, XDDP_LABEL,&plabel, sizeof(plabel));
-        
-        if (ret)
-                fail("setsockopt");
-        /*
-         * Bind the socket to the port, to setup a proxy to channel
-         * traffic to/from the Linux domain. Assign that port a label,
-         * so that peers may use a descriptive information to locate
-         * it. For instance, the pseudo-device matching our RT
-         * endpoint will appear as
-         * /proc/xenomai/registry/rtipc/xddp/<XDDP_PORT_LABEL> in the
-         * Linux domain, once the socket is bound.
-         *
-         * saddr.sipc_port specifies the port number to use. If -1 is
-         * passed, the XDDP driver will auto-select an idle port.
-         */
-        memset(&saddr, 0, sizeof(saddr));
-        saddr.sipc_family = AF_RTIPC;
-        saddr.sipc_port = -1;
-        ret = bind(s, (struct sockaddr *)&saddr, sizeof(saddr));
-        if (ret)
-                fail("bind");
-        for (;;) {
-                /* Get packets relayed by the regular thread */
-                ret = recvfrom(s, buf, sizeof(buf), 0, NULL, 0);
-                if (ret <= 0)
-                    fail("recvfrom");
+static int loop_guard = 1;
+bool verbose;
 
-                std::cout << buf << std::endl;
-                
-                //printf("%s: \"%.*s\" relayed by peer\n", __FUNCTION__, ret, buf);
-                ts.tv_sec = 0;
-                ts.tv_nsec = 500000000; /* 500 ms */
-                clock_nanosleep(CLOCK_REALTIME, 0, &ts, NULL);
-                
-        }
-        return NULL;
+static const std::string rt2nrt_pipe( "RT2NRT" );
+static const std::string nrt2rt_pipe( "NRT2RT" );
+
+static const std::string rd_pdo_pipe( "NoNe@Motor_id_1_tx_pdo" );
+static const std::string wr_pdo_pipe( "NoNe@Motor_id_1_rx_pdo" );
+
+
+ThreadsMap threads;
+    
+static void test_sighandler(int signum) {
+    
+    std::cout << "Handling signal " << signum << std::endl;
+    loop_guard = 0;
 }
 
-static void *regular_thread(void *arg)
-{
-        char *devname;
-        int fd, ret,timeout;
-        if (asprintf(&devname, "/proc/xenomai/registry/rtipc/xddp/%s",XDDP_PORT_LABEL) < 0)
-                fail("asprintf");
-        fd = open(devname, O_WRONLY | O_NONBLOCK);
-        free(devname);
-        
-        if (fd < 0)
-                fail("open");
-        
-         
-        
-        YAML::Node slaves_info;
-        bool done=false;
-        
-        for (;;) {
-            
 
-            if(done)
-            { 
-                /* Relay the message to realtime_thread1. */
-                //slaves_info = YAML::Load(pb_reply.msg().c_str());
-                //auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
-                //for(auto [key,val]:slave_info_map)
-                //{
-                //    for(auto [ikey,ival]:val)
-                //    {
-                //        if(ival==21)
-                //        {
-                //        ret = write(fd, &key,sizeof(key));
-                //        if (ret <= 0)
-                //         fail("write");
-                //        }
-                //    }
-                //}
-            }
-            
-        }
-        return NULL;
-}
-int main(int argc, char **argv)
-{
-        struct sched_param rtparam = { .sched_priority = 42 };
-        pthread_attr_t rtattr, regattr;
-        sigset_t set;
-        int sig;
-        sigemptyset(&set);
-        sigaddset(&set, SIGINT);
-        sigaddset(&set, SIGTERM);
-        sigaddset(&set, SIGHUP);
-        pthread_sigmask(SIG_BLOCK, &set, NULL);
-        pthread_attr_init(&rtattr);
-        pthread_attr_setdetachstate(&rtattr, PTHREAD_CREATE_JOINABLE);
-        pthread_attr_setinheritsched(&rtattr, PTHREAD_EXPLICIT_SCHED);
-#ifdef __COBALT__
-        pthread_attr_setschedpolicy(&rtattr, SCHED_FIFO);
+
+
+////////////////////////////////////////////////////
+//
+// Main
+//
+////////////////////////////////////////////////////
+
+int main ( int argc, char * argv[] ) try {
+
+    cxxopts::Options options(argv[0], " - wizardry setup");
+    int num_wrk;
+    int rt_th_period_us;
+    
+    try
+    {
+        options.add_options()
+            ("v, verbose", "verbose", cxxopts::value<bool>()->implicit_value("true"));
+        options.add_options()
+            ("p, rt_th_period_us", "rt_th_period_us", cxxopts::value<int>()->default_value("250000"));
+        options.parse(argc, argv);
+
+        rt_th_period_us = options["rt_th_period_us"].as<int>();
+        verbose = options["verbose"].as<bool>();
+    }
+    catch (const cxxopts::OptionException& e)
+    {
+        std::cout << "error parsing options: " << e.what() << std::endl;
+        exit(1);
+    }
+
+#ifdef SIG_TEST
+    sigset_t set;
+    int sig;
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+    sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGHUP);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+    main_common (&argc, (char*const**)&argv, 0);
 #else
-        pthread_attr_setschedpolicy(&rtattr, SCHED_OTHER);
+    main_common (&argc, (char*const**)&argv, test_sighandler);
 #endif
-        pthread_attr_setschedparam(&rtattr, &rtparam);
-        /* Both real-time threads have the same attribute set. */
-        errno = pthread_create(&rt1, &rtattr, &realtime_thread, NULL);
-        if (errno)
-                fail("pthread_create");
+    
+    
+    std::string th_name = "ZMQ_thread";
+    threads[th_name] = new zmq_thread(th_name, rt2nrt_pipe, nrt2rt_pipe);
+    
+    
+    
+    th_name = "RT_thread";
+    const std::vector<std::tuple<int, std::string, std::string>> rdwr {std::make_tuple(1, rd_pdo_pipe, wr_pdo_pipe)};
+    threads[th_name] = new RT_motor_thread(th_name, rdwr,nrt2rt_pipe, rt2nrt_pipe,rt_th_period_us);
+        
+    /*
+     * The barrier is opened when COUNT waiters arrived.
+     */
+    pthread_barrier_init(&threads_barrier, NULL, threads.size()+1 );    
 
-        pthread_attr_init(&regattr);
-        pthread_attr_setdetachstate(&regattr, PTHREAD_CREATE_JOINABLE);
-        pthread_attr_setinheritsched(&regattr, PTHREAD_EXPLICIT_SCHED);
-        pthread_attr_setschedpolicy(&regattr, SCHED_OTHER);
-        errno = pthread_create(&nrt, &regattr, &regular_thread, NULL);
-        if (errno)
-                fail("pthread_create");
-        sigwait(&set, &sig);
-        pthread_cancel(rt1);
-        pthread_cancel(nrt);
-        pthread_join(rt1, NULL);
-        pthread_join(nrt, NULL);
-        return 0;
+    threads["RT_thread"]->create(true);
+    threads["ZMQ_thread"]->create(false);
+
+    std::cout << "... wait on barrier" << std::endl;
+    //sleep(3);
+    pthread_barrier_wait(&threads_barrier);
+
+#ifdef SIG_TEST
+    #ifdef __COBALT__
+        // here I want to catch CTRL-C 
+        __real_sigwait(&set, &sig);
+    #else
+        sigwait(&set, &sig);  
+    #endif
+#else
+    while ( loop_guard ) {
+        sleep(1);
+    }
+#endif
+
+    threads["ZMQ_thread"]->stop();
+    threads["RT_thread"]->stop();
+    
+    for ( auto const &t : threads) {
+        //t.second->stop();
+        t.second->join();
+        delete t.second;
+    }
+    
+    std::cout << "Exit main" << std::endl;
+
+    return 0;
+
+} catch ( std::exception& e ) {
+
+    std::cout << "Main catch .... " <<  e.what() << std::endl;
+
 }
+
+
+// kate: indent-mode cstyle; indent-width 4; replace-tabs on; 
