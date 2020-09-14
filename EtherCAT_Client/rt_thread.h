@@ -9,11 +9,12 @@
 #include <ecat_pdo.pb.h>
 
 #define POOL_SIZE   4096
-#define MAX_PB_SIZE 1024
+#define MAX_PB_SIZE 4096
 #define MAX_WRK     64
 
 extern bool verbose;
 using namespace std;
+using namespace iit::advr;
 
 static int read_pb_from(pipe_base &ddp, uint8_t *buff, ::google::protobuf::Message *pb_msg, std::string who)
 {
@@ -25,7 +26,7 @@ static int read_pb_from(pipe_base &ddp, uint8_t *buff, ::google::protobuf::Messa
         //pb_msg.Clear();
         nbytes += ddp.ddp_read ( buff, msg_size );
         pb_msg->ParseFromArray(buff, msg_size);
-        DPRINTF("[%s]\tread %d bytes from %s\n", who.c_str(), nbytes, ddp.get_pipe_path().c_str());
+        //DPRINTF("[%s]\tread %d bytes from %s\n", who.c_str(), nbytes, ddp.get_pipe_path().c_str());
         if ( verbose ) {
             DPRINTF("[%s] read msg :\n%s\n", who.c_str(), pb_msg->DebugString().c_str());
         }
@@ -77,10 +78,14 @@ private:
     std::vector<std::tuple<int, std::string, std::string>> rd_wr_motor_pdo;
     std::map<int, IDDP_pipe>    rd_iddp, wr_iddp;
     
-    iit::advr::Repl_cmd                     pb_repl_cmd;
+    iit::advr::Cmd_reply                    pb_cmd_reply;
     std::map<int, iit::advr::Ec_slave_pdo>  pb_rx_pdos;
     std::map<int, iit::advr::Ec_slave_pdo>  pb_tx_pdos;
-    uint8_t                                 pb_buf[MAX_PB_SIZE];    
+    uint8_t                                 pb_buf[MAX_PB_SIZE];   
+    YAML::Node slaves_info;
+    int STATUS,id_start;
+    
+    Repl_cmd  pb_cmd;
     
     void  set_motor_pdo(int id, float pos)
     {
@@ -106,61 +111,10 @@ private:
         pb->mutable_motor_xt_tx_pdo()->set_ts(uint32_t(iit::ecat::get_time_ns()/1000));        
         
     }
-       
-public:
-
-    RT_motor_thread(std::string _name,
-                    const std::vector<std::tuple<int, std::string, std::string>> &_rd_wr_motor_pdo,
-                    std::string rd,
-                    std::string wr,
-                    uint32_t th_period_us ) :
-    rd_wr_motor_pdo(_rd_wr_motor_pdo), rd_pipe(rd), wr_pipe(wr)
+    
+    void iddp_pipe_init ()
     {
-        name = _name;
-        // periodic
-        struct timespec ts;
-        iit::ecat::us2ts(&ts, th_period_us);
-        // period.period is a timeval ... tv_usec 
-        period.period = { ts.tv_sec, ts.tv_nsec / 1000 };
-#ifdef __COBALT__
-        schedpolicy = SCHED_FIFO;
-#else
-        schedpolicy = SCHED_OTHER;
-#endif
-        priority = sched_get_priority_max ( schedpolicy ) / 2;
-        stacksize = 0; // not set stak size !!!! YOU COULD BECAME CRAZY !!!!!!!!!!!!
-        
-       
-       string rd_name,wr_name;
-       int id;
-      
-       for (std::vector<std::tuple<int, std::string, std::string>>::const_iterator i = rd_wr_motor_pdo.begin(); i != rd_wr_motor_pdo.end(); ++i) {
-         id=      get<0>(*i);
-         rd_name= get<1>(*i);
-         wr_name= get<2>(*i);
-         DPRINTF("%d %s %s\n", id, rd_name.c_str(), wr_name.c_str());
-       }
-        
-         //for ( const auto& [id, rd_name, wr_name] : rd_wr_motor_pdo ){
-         //   DPRINTF("%d %s %s\n", id, rd_name.c_str(), wr_name.c_str());
-        //}
-    }
 
-    ~RT_motor_thread()
-    { 
-        iit::ecat::print_stat ( s_loop );
-    }
-
-    virtual void th_init ( void * )
-    {
-        start_time = iit::ecat::get_time_ns();
-        tNow, tPre = start_time;
-        loop_cnt = 0;
-        
-        // bind xddp pipes
-        rd_xddp.bind(rd_pipe);
-        wr_xddp.bind(wr_pipe);
-        
        string pipe_name,not_used;
        int id;
       
@@ -182,7 +136,6 @@ public:
             pb_tx_pdos[id] = iit::advr::Ec_slave_pdo();
         }
         
-        pthread_barrier_wait(&threads_barrier);
 
         // connect wr iddp
         for (std::vector<std::tuple<int, std::string, std::string>>::const_iterator i = rd_wr_motor_pdo.begin(); i != rd_wr_motor_pdo.end(); ++i) {
@@ -194,7 +147,59 @@ public:
         }
 
         // sanity check
-        assert(rd_iddp.size() == wr_iddp.size() == pb_tx_pdos.size() == pb_rx_pdos.size());     
+        assert(pb_tx_pdos.size() == pb_rx_pdos.size());     
+    }
+    
+    
+       
+public:
+
+    RT_motor_thread(std::string _name,
+                    std::string rd,
+                    std::string wr,
+                    uint32_t th_period_us ) :
+     rd_pipe(rd), wr_pipe(wr)
+    {
+        name = _name;
+        // periodic
+        struct timespec ts;
+        iit::ecat::us2ts(&ts, th_period_us);
+        // period.period is a timeval ... tv_usec 
+        period.period = { ts.tv_sec, ts.tv_nsec / 1000 };
+#ifdef __COBALT__
+        schedpolicy = SCHED_FIFO;
+#else
+        schedpolicy = SCHED_OTHER;
+#endif
+        priority = sched_get_priority_max ( schedpolicy ) / 2;
+        stacksize = 0; // not set stak size !!!! YOU COULD BECAME CRAZY !!!!!!!!!!!!
+        
+       
+       string rd_name,wr_name;
+       int id;
+      
+    }
+
+    ~RT_motor_thread()
+    { 
+        iit::ecat::print_stat ( s_loop );
+    }
+
+    virtual void th_init ( void * )
+    {
+        start_time = iit::ecat::get_time_ns();
+        tNow, tPre = start_time;
+        loop_cnt = 0;
+        
+        // bind xddp pipes
+        rd_xddp.bind(rd_pipe);
+        wr_xddp.bind(wr_pipe);
+        
+        pthread_barrier_wait(&threads_barrier);
+        
+       string pipe_name,not_used;
+       int id;  
+       STATUS=0;
     }
     
     virtual void th_loop ( void * )
@@ -211,65 +216,126 @@ public:
         loop_cnt++;
         
         // 2 : read from NRT
-        rd_bytes_from_nrt = read_pb_from(rd_xddp, pb_buf, &pb_repl_cmd, name);
-        
-        if ( rd_bytes_from_nrt > 0 ) {
-            // process repl cmd
-        }    
-        
-        IDDP_pipe pipe;
-        int id;
-        
-        // *******************SENSE*********************************         
-        
-        //for ( auto& [id, pipe] : rd_iddp )
-        for ( auto const& item : rd_iddp){
-            id=item.first; 
-            pipe=item.second;
-            do {
-                rd_bytes_from_rt = read_pb_from(pipe, pb_buf, &pb_rx_pdos[id], name);
-                // at least check faults on multiple reads ...
-            } while (rd_bytes_from_rt > 0);
-        }
-        
-        if ( ! start_pos ) {
-            start_pos = pb_rx_pdos[1].mutable_motor_xt_rx_pdo()->motor_pos();
-            ref = start_pos;
-        }
+        rd_bytes_from_nrt = read_pb_from(rd_xddp, pb_buf, &pb_cmd_reply, name);
 
-        if ( ref > start_pos + 0.5) {
-            ds = -0.001;    
-        }
-        if ( ref < start_pos - 0.5) {
-            ds = 0.001;
-        }
-        ref += ds; 
-        
-        //std::map<int, iit::advr::Ec_slave_pdo> 
-        
-        //for ( auto& [id, pb] : pb_rx_pdos )
-        for ( auto const& item : pb_rx_pdos){
-            id=item.first; 
-            set_motor_pdo(id, ref );
-        }
+        if(STATUS==0)  // status check ids for motor 
+        {
+            if ( rd_bytes_from_nrt > 0 )
+            {
+                if(pb_cmd_reply.type()==Cmd_reply::ACK)
+                {
+                    if(pb_cmd_reply.cmd_type()==CmdType::ECAT_MASTER_CMD)
+                    {
+                        slaves_info = YAML::Load(pb_cmd_reply.msg().c_str());
+                        
+                        auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
+                        string pipe_name="NoNe@Motor_id_";
+                        string rpipe_name="";
+                        string wpipe_name="";
 
-        //std::map<int, IDDP_pipe>    rd_iddp, wr_iddp;
-        
-       
-        // *******************MOVE********************************* 
-        
-
-        //for ( auto& [id, pipe] : wr_iddp ) 
-        for ( auto const& item : wr_iddp){
-            id=item.first; 
-            pipe=item.second;
-            write_pb_to(pipe, pb_buf, &pb_tx_pdos[id], name);
+                        for(auto [key,val]:slave_info_map)
+                        {
+                            for(auto [ikey,ival]:val)
+                            {
+                                if(ival==21)
+                                {
+                                    rpipe_name=pipe_name+to_string(key)+"_tx_pdo";
+                                    wpipe_name=pipe_name+to_string(key)+"_rx_pdo";
+                                    cout << "Creating reading pipe: " << rpipe_name << endl;
+                                    cout << "Creating writing pipe: " << wpipe_name << endl;
+                                    rd_wr_motor_pdo.push_back(std::make_tuple(key, rpipe_name, wpipe_name));
+                                }
+                            }
+                        }
+                        
+                        STATUS=1;    
+                    }
+                } 
+            }    
         }
-            
-        if ( rd_bytes_from_nrt > 0 ) {
-            // 3 : write to NRT
-            write_pb_to(wr_xddp, pb_buf, &pb_repl_cmd, name);
+        
+        if(STATUS==1)
+        {
+          iddp_pipe_init();
+          STATUS=2;
+          id_start=0;
         }
+        
+        if(STATUS==2)
+        {
+            if(pb_cmd_reply.type()==Cmd_reply::ACK)
+                    if(pb_cmd_reply.cmd_type()==CmdType::CTRL_CMD)
+                        id_start=id_start+1;
+                    
+            if(id_start<rd_wr_motor_pdo.size())
+            {
+                int id= get<0>(rd_wr_motor_pdo[id_start]);
+                pb_cmd.set_type(CmdType::CTRL_CMD);
+                pb_cmd.mutable_ctrl_cmd()->set_type(Ctrl_cmd::CTRL_CMD_START);
+                pb_cmd.mutable_ctrl_cmd()->set_board_id(id);
+                //pb_cmd.mutable_ctrl_cmd()->set_value(0x3B);
+                write_pb_to(wr_xddp, pb_buf, &pb_cmd, name);
+            }
+            else
+            {
+                STATUS=3;
+                cout << "-------------ALL MOTORS STARTED------" << endl;
+            }
+ 
+        }
+//         IDDP_pipe pipe;
+//         int id;
+//         
+//         // *******************SENSE*********************************         
+//         
+//         //for ( auto& [id, pipe] : rd_iddp )
+//         for ( auto const& item : rd_iddp){
+//             id=item.first; 
+//             pipe=item.second;
+//             do {
+//                 rd_bytes_from_rt = read_pb_from(pipe, pb_buf, &pb_rx_pdos[id], name);
+//                 // at least check faults on multiple reads ...
+//             } while (rd_bytes_from_rt > 0);
+//         }
+//         
+//         if ( ! start_pos ) {
+//             start_pos = pb_rx_pdos[1].mutable_motor_xt_rx_pdo()->motor_pos();
+//             ref = start_pos;
+//         }
+// 
+//         if ( ref > start_pos + 0.5) {
+//             ds = -0.001;    
+//         }
+//         if ( ref < start_pos - 0.5) {
+//             ds = 0.001;
+//         }
+//         ref += ds; 
+//         
+//         //std::map<int, iit::advr::Ec_slave_pdo> 
+//         
+//         //for ( auto& [id, pb] : pb_rx_pdos )
+//         for ( auto const& item : pb_rx_pdos){
+//             id=item.first; 
+//             set_motor_pdo(id, ref );
+//         }
+// 
+//         //std::map<int, IDDP_pipe>    rd_iddp, wr_iddp;
+//         
+//        
+//         // *******************MOVE********************************* 
+//         
+// 
+//         //for ( auto& [id, pipe] : wr_iddp ) 
+//         for ( auto const& item : wr_iddp){
+//             id=item.first; 
+//             pipe=item.second;
+//             write_pb_to(pipe, pb_buf, &pb_tx_pdos[id], name);
+//         }
+//             
+//         if ( rd_bytes_from_nrt > 0 ) {
+//             // 3 : write to NRT
+//             //write_pb_to(wr_xddp, pb_buf, &pb_repl_cmd, name);
+//         }
         
     }
 

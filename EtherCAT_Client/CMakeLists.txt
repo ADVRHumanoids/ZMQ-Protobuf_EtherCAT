@@ -3,11 +3,21 @@ project(etherCAT_client)
 cmake_minimum_required(VERSION 3.0)
 
 ## use this to globally use C++14 with in our project
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+#list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-find_package(Xenomai QUIET)
+if ( ${ENABLE_XENO} )
+    option(CMAKE_USE_XENOMAI "Use Xenomai libraries" ON)
+    find_package(Xenomai 3.1 REQUIRED)
+    if(TARGET Xenomai::cobalt)
+        set(USE_COBALT True)
+    endif()
+else ()
+    option(CMAKE_USE_XENOMAI "Use Xenomai libraries" OFF)
+endif()
+
+#find_package(Xenomai QUIET)
 
 find_package(yaml-cpp QUIET)
 
@@ -20,9 +30,9 @@ find_library(ecat_master_pb
     HINTS "${CMAKE_INSTALL_PREFIX}/lib"
 )
 
-find_library(ecat_master_nrt
-    NAMES ecat_master_nrt.a
-    HINTS "${CMAKE_CURRENT_BINARY_DIR}/../../ecat_master_advr/"
+find_library(ecat_master_rt
+    NAMES ecat_master_rt
+    HINTS "${CMAKE_INSTALL_PREFIX}/lib"
 )
 
 ## load in pkg-config support
@@ -83,12 +93,18 @@ target_include_directories(ethercat_client4 PUBLIC ${ZeroMQ_INCLUDE_DIR})
 ## at the 0mq library to our link directive
 target_link_libraries(ethercat_client4 PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ${ecat_master_pb})
 
+
 if(${ENABLE_XENO})
     add_executable(ethercat_client_RTNRT ethercat_client_RTNRT.cpp)
+    if(Xenomai_FOUND)
+    xenomai_target_bootstrap(ethercat_client_RTNRT SKINS posix)
+    endif()
+
     ## add the include directory to our compile directives
     target_include_directories(ethercat_client_RTNRT PUBLIC ${ZeroMQ_INCLUDE_DIR})
     ## at the 0mq library to our link directive
-    target_link_libraries(ethercat_client_RTNRT PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ${ecat_master_pb} -lyaml-cpp PRIVATE ${ecat_master_nrt})
-    set_xeno_flags(ethercat_client_RTNRT)
+    target_link_libraries(ethercat_client_RTNRT PUBLIC ${ZeroMQ_LIBRARY} -lprotobuf ${ecat_master_pb} -lyaml-cpp Xenomai::posix PRIVATE ${ecat_master_rt})
+
+#set_xeno_flags(ethercat_client_RTNRT)
 endif()
 

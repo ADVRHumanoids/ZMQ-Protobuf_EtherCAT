@@ -13,7 +13,7 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 
-char uri[]= "tcp://advantech.local:5555";
+char uri[]= "tcp://hhcm-mio.local:5555";
 using namespace zmq;
 using namespace std;
 using namespace iit::advr;
@@ -35,14 +35,12 @@ private:
     iit::advr::Repl_cmd pb_repl_cmd;
     uint8_t             pb_buf[MAX_PB_SIZE];
     int timeout;    
-    zmq::context_t context{1};
-    zmq::socket_t publisher{context, ZMQ_REQ};
-    zmq::message_t update;
-    bool zmq_live;
+    int STATUS;
     std::string m_cmd;
     std::string pb_msg_serialized;
     multipart_t multipart;
     
+    Repl_cmd  pb_cmd;
     Cmd_reply pb_reply;
     
     int32_t write_to_RT(::google::protobuf::Message *pb_msg)
@@ -54,12 +52,13 @@ private:
         if ( msg_size > MAX_PB_SIZE ) {
             return -1;
         }
+
         pb_msg->SerializeToArray( (void*)pb_buf, msg_size);
         
         nbytes = write ( wr_xddp, (void*)&msg_size, sizeof(msg_size) );
         if ( nbytes > 0 ) {
             nbytes += write ( wr_xddp, (void*)pb_buf, msg_size );
-            DPRINTF("[NRT]\t%lu loop \twrite %d bytes", loop_cnt, nbytes);
+            //DPRINTF("[NRT]\t%lu loop \twrite %d bytes", loop_cnt, nbytes);
             if ( verbose ) {
                 DPRINTF(" to %s\n", wr_pipe_path.c_str());
                 DPRINTF("[NRT] write msg :\n%s\n", pb_msg->DebugString().c_str());
@@ -79,7 +78,7 @@ private:
             pb_msg->Clear();
             nbytes += read ( rd_xddp, (void*)pb_buf, msg_size );
             pb_msg->ParseFromArray(pb_buf, msg_size);
-            DPRINTF("[NRT]\t%lu loop \tread %d bytes", loop_cnt, nbytes);
+            //DPRINTF("[NRT]\t%lu loop \tread %d bytes", loop_cnt, nbytes);
             if ( verbose ) {
                 DPRINTF(" from %s\n", rd_pipe_path.c_str());
                 DPRINTF("[NRT] read msg :\n%s", pb_msg->DebugString().c_str());
@@ -89,12 +88,6 @@ private:
         return nbytes;
     }
 
-    uint32_t pbSet(uint32_t idx)
-    {
-        //pb_repl_cmd.set_type(iit::advr::CmdType::CTRL_CMD);
-        //set_pbHeader(pb_repl_cmd.mutable_header(), name, idx);
-        return pb_repl_cmd.ByteSize();        
-    }
     
 public:
 
@@ -129,11 +122,11 @@ public:
         tNow, tPre = start_time;
         loop_cnt = 0;
         
+        
         pthread_barrier_wait(&threads_barrier);
         /// ZMQ Setup
-        timeout=100; 
-        zmq_live=false;
-        m_cmd="MASTER_CMD";
+        timeout=10000; 
+        STATUS=0;
     }
     
     virtual void th_loop ( void * )
@@ -143,46 +136,67 @@ public:
         tPre = tNow;
         
         loop_cnt++;
+        zmq::context_t context{1};
+        zmq::socket_t publisher{context, ZMQ_REQ};
+        zmq::message_t update;
         
         int32_t nbytes_wr, nbytes_rd;
         
         //ZMQ Connection 
-        
         publisher.setsockopt(ZMQ_RCVTIMEO,timeout);
         publisher.connect(uri);
         
-        if(!zmq_live)
+        // ID's Getting STATUS
+        if(STATUS==0)
         {
-            Ecat_Master_cmd *ecat_master_cmd= new Ecat_Master_cmd();
-            Repl_cmd pb_msg;
-            pb_msg.set_type(CmdType::ECAT_MASTER_CMD);
-            ecat_master_cmd->set_type(Ecat_Master_cmd::GET_SLAVES_DESCR);
-            pb_msg.set_allocated_ecat_master_cmd(ecat_master_cmd);
-            pb_msg.SerializeToString(&pb_msg_serialized);
+            m_cmd="MASTER_CMD";
+            pb_cmd.set_type(CmdType::ECAT_MASTER_CMD);
+            pb_cmd.mutable_ecat_master_cmd()->set_type(Ecat_Master_cmd::GET_SLAVES_DESCR);
+            pb_cmd.SerializeToString(&pb_msg_serialized);
             multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
             multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
-            multipart.send(publisher);
+            multipart.send(publisher,ZMQ_NOBLOCK);
         
             if(publisher.recv(&update))
             {
-                zmq_live=true;
+                STATUS=1;
                 pb_reply.ParseFromArray(update.data(),update.size());
             }
         }
-            
+        // SEND ID's to RT Thread STATUS    
         
-        
-        ///////////////////////////////////////////////////////////////////////
-        // 1 : write to RT
-        pbSet(loop_cnt);
-        nbytes_wr = write_to_RT(&pb_repl_cmd);
-        ///////////////////////////////////////////////////////////////////////
-        // 4 : read from RT -- BLOCKING
-        //nbytes_rd = read_from_RT(&pb_repl_cmd);
-        
-        if ( nbytes_rd > 0 && nbytes_wr > 0 ) {
-            DPRINTF("_-_-_-_-_-_-_-_-_-_-_-_-_-_-_\n");
+        if(STATUS==1)
+        {
+            ///////////////////////////////////////////////////////////////////////
+            // 1 : write to RT
+            nbytes_wr = write_to_RT(&pb_reply);
+            ///////////////////////////////////////////////////////////////////////
+            STATUS=2;
         }
+        
+        if(STATUS==2)
+        {
+            // 4 : read from RT -- BLOCKING
+            nbytes_rd = read_from_RT(&pb_cmd);
+            m_cmd="ESC_CMD";
+            pb_cmd.SerializeToString(&pb_msg_serialized);
+            multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
+            multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
+            multipart.send(publisher,ZMQ_NOBLOCK);
+            if(publisher.recv(&update))
+            {
+                pb_reply.ParseFromArray(update.data(),update.size());
+                STATUS=1;
+            }
+        
+        }
+        
+        //if ( nbytes_rd > 0 && nbytes_wr > 0 ) {
+        //    DPRINTF("_-_-_-_-_-_-_-_-_-_-_-_-_-_-_\n");
+        //}
+        
+        //ZMQ Disconnection 
+        publisher.disconnect(uri);
     }
 
 

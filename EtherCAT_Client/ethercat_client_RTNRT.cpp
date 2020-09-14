@@ -24,7 +24,7 @@
 
 #include "rt_thread.h"
 #include "zmq_thread.h"
-
+#include <random>
 
 /*
  * Use protobuf msg iit::advr::Repl_cmd
@@ -40,13 +40,11 @@ std::mt19937 rng(rd());    // random-number engine used (Mersenne-Twister in thi
 std::uniform_real_distribution<double> uni(0,10);
 
 static int loop_guard = 1;
-bool verbose;
+bool verbose=0;
 
 static const std::string rt2nrt_pipe( "RT2NRT" );
 static const std::string nrt2rt_pipe( "NRT2RT" );
 
-static const std::string rd_pdo_pipe( "NoNe@Motor_id_1_tx_pdo" );
-static const std::string wr_pdo_pipe( "NoNe@Motor_id_1_rx_pdo" );
 
 
 ThreadsMap threads;
@@ -82,6 +80,7 @@ int main ( int argc, char * argv[] ) try {
 
         rt_th_period_us = options["rt_th_period_us"].as<int>();
         verbose = options["verbose"].as<bool>();
+        verbose=0;
     }
     catch (const cxxopts::OptionException& e)
     {
@@ -109,8 +108,8 @@ int main ( int argc, char * argv[] ) try {
     
     
     th_name = "RT_thread";
-    const std::vector<std::tuple<int, std::string, std::string>> rdwr {std::make_tuple(1, rd_pdo_pipe, wr_pdo_pipe)};
-    threads[th_name] = new RT_motor_thread(th_name, rdwr,nrt2rt_pipe, rt2nrt_pipe,rt_th_period_us);
+    //const std::vector<std::tuple<int, std::string, std::string>> rdwr {std::make_tuple(1, rd_pdo_pipe, wr_pdo_pipe)};
+    threads[th_name] = new RT_motor_thread(th_name,nrt2rt_pipe, rt2nrt_pipe,rt_th_period_us);
         
     /*
      * The barrier is opened when COUNT waiters arrived.
