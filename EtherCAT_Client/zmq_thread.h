@@ -35,13 +35,16 @@ private:
     iit::advr::Repl_cmd pb_repl_cmd;
     uint8_t             pb_buf[MAX_PB_SIZE];
     int timeout;    
-    int STATUS;
+    int STATUS,id_start;
     std::string m_cmd;
     std::string pb_msg_serialized;
     multipart_t multipart;
     
     Repl_cmd  pb_cmd;
     Cmd_reply pb_reply;
+    std::vector<int> id_v;
+    YAML::Node slaves_info;
+    
     
     int32_t write_to_RT(::google::protobuf::Message *pb_msg)
     {
@@ -161,6 +164,22 @@ public:
             {
                 STATUS=1;
                 pb_reply.ParseFromArray(update.data(),update.size());
+                
+                if(pb_reply.type()==Cmd_reply::ACK)
+                {
+                    if(pb_reply.cmd_type()==CmdType::ECAT_MASTER_CMD)
+                    {
+                        slaves_info = YAML::Load(pb_reply.msg().c_str());
+                        
+                        auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
+
+                        for(auto [key,val]:slave_info_map)
+                            for(auto [ikey,ival]:val)
+                                if(ival==21)
+                                    id_v.push_back(key);
+                        
+                    }
+                }
             }
         }
         // SEND ID's to RT Thread STATUS    
@@ -171,14 +190,21 @@ public:
             // 1 : write to RT
             nbytes_wr = write_to_RT(&pb_reply);
             ///////////////////////////////////////////////////////////////////////
-            STATUS=2;
+            STATUS=4;
+            id_start=0;
         }
         
         if(STATUS==2)
         {
             // 4 : read from RT -- BLOCKING
-            nbytes_rd = read_from_RT(&pb_cmd);
+            //nbytes_rd = read_from_RT(&pb_cmd);
+            
             m_cmd="ESC_CMD";
+            pb_cmd.set_type(CmdType::CTRL_CMD);
+            pb_cmd.mutable_ctrl_cmd()->set_type(Ctrl_cmd::CTRL_CMD_START);
+            pb_cmd.mutable_ctrl_cmd()->set_board_id(id_v[id_start]);
+            pb_cmd.mutable_ctrl_cmd()->set_value(0x3B);
+           
             pb_cmd.SerializeToString(&pb_msg_serialized);
             multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
             multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
@@ -186,7 +212,23 @@ public:
             if(publisher.recv(&update))
             {
                 pb_reply.ParseFromArray(update.data(),update.size());
-                STATUS=1;
+                 if(pb_reply.type()==Cmd_reply::ACK)
+                 {
+                    if(pb_reply.cmd_type()==CmdType::CTRL_CMD)
+                        id_start=id_start+1;
+                 }
+                 else
+                 {
+                    STATUS=3;  /// ERROR
+                    cout << "-------------ERROR During the start time for the motors------" << endl;
+                 }
+                    
+
+            }
+            if(id_start==id_v.size())
+            {
+                STATUS=4;  // CONTINUE
+                cout << "-------------ALL MOTORS STARTED------" << endl;
             }
         
         }
