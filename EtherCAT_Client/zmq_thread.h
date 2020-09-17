@@ -41,7 +41,7 @@ private:
     multipart_t multipart;
     
     Repl_cmd  pb_cmd;
-    Cmd_reply pb_reply;
+    Cmd_reply pb_reply,pb_reply_RT;
     std::vector<int> id_v;
     YAML::Node slaves_info;
     
@@ -130,6 +130,9 @@ public:
         /// ZMQ Setup
         timeout=10000; 
         STATUS=0;
+        pb_cmd.Clear();
+        pb_reply.Clear();
+        pb_reply_RT.Clear();
     }
     
     virtual void th_loop ( void * )
@@ -162,39 +165,32 @@ public:
         
             if(publisher.recv(&update))
             {
-                STATUS=1;
-                pb_reply.ParseFromArray(update.data(),update.size());
+                pb_reply_RT.ParseFromArray(update.data(),update.size());
                 
-                if(pb_reply.type()==Cmd_reply::ACK)
+                if(pb_reply_RT.type()==Cmd_reply::ACK)
                 {
-                    if(pb_reply.cmd_type()==CmdType::ECAT_MASTER_CMD)
+                    if(pb_reply_RT.cmd_type()==CmdType::ECAT_MASTER_CMD)
                     {
-                        slaves_info = YAML::Load(pb_reply.msg().c_str());
-                        
-                        auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
+                        if(pb_reply_RT.msg()!="")
+                        {
+                            slaves_info = YAML::Load(pb_reply_RT.msg().c_str());
+                            
+                            auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
 
-                        for(auto [key,val]:slave_info_map)
-                            for(auto [ikey,ival]:val)
-                                if(ival==21)
-                                    id_v.push_back(key);
+                            for(auto [key,val]:slave_info_map)
+                                for(auto [ikey,ival]:val)
+                                    if(ival==21)
+                                        id_v.push_back(key);
+                            STATUS=1;
+                            id_start=0; 
+                        }
                         
                     }
                 }
             }
         }
-        // SEND ID's to RT Thread STATUS    
-        
+       
         if(STATUS==1)
-        {
-            ///////////////////////////////////////////////////////////////////////
-            // 1 : write to RT
-            nbytes_wr = write_to_RT(&pb_reply);
-            ///////////////////////////////////////////////////////////////////////
-            STATUS=4;
-            id_start=0;
-        }
-        
-        if(STATUS==2)
         {
             // 4 : read from RT -- BLOCKING
             //nbytes_rd = read_from_RT(&pb_cmd);
@@ -203,7 +199,10 @@ public:
             pb_cmd.set_type(CmdType::CTRL_CMD);
             pb_cmd.mutable_ctrl_cmd()->set_type(Ctrl_cmd::CTRL_CMD_START);
             pb_cmd.mutable_ctrl_cmd()->set_board_id(id_v[id_start]);
-            pb_cmd.mutable_ctrl_cmd()->set_value(0x3B);
+            if(id_v[id_start]!=123)
+                pb_cmd.mutable_ctrl_cmd()->set_value(0x3B);
+            else
+                pb_cmd.mutable_ctrl_cmd()->set_value(0xD4);
            
             pb_cmd.SerializeToString(&pb_msg_serialized);
             multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
@@ -219,7 +218,7 @@ public:
                  }
                  else
                  {
-                    STATUS=3;  /// ERROR
+                    STATUS=2;  /// ERROR
                     cout << "-------------ERROR During the start time for the motors------" << endl;
                  }
                     
@@ -227,10 +226,21 @@ public:
             }
             if(id_start==id_v.size())
             {
-                STATUS=4;  // CONTINUE
+                STATUS=3;  // CONTINUE
                 cout << "-------------ALL MOTORS STARTED------" << endl;
             }
         
+        }
+        
+         // SEND ID's to RT Thread STATUS    
+        
+        if((STATUS==3)&&(loop_cnt>10000))
+        {
+            ///////////////////////////////////////////////////////////////////////
+            // 1 : write to RT
+            nbytes_wr = write_to_RT(&pb_reply_RT);
+            ///////////////////////////////////////////////////////////////////////
+            STATUS=4;
         }
         
         //if ( nbytes_rd > 0 && nbytes_wr > 0 ) {

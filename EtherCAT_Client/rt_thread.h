@@ -86,8 +86,10 @@ private:
     uint8_t                                 pb_buf[MAX_PB_SIZE];   
     YAML::Node slaves_info;
     int STATUS;
+    std::map <int,float> start_pos,ref;
     
     Repl_cmd  pb_cmd;
+    bool first_time;
     
     void  set_motor_pdo(int id, float pos)
     {
@@ -114,7 +116,7 @@ private:
         
     }
     
-    void  set_first_motor_pdo(int id)
+    void  set_dummy_pdo(int id)
     {
         static struct timespec ts;
         auto pb = &pb_tx_pdos[id];
@@ -124,58 +126,36 @@ private:
         pb->mutable_header()->mutable_stamp()->set_sec(ts.tv_sec);
         pb->mutable_header()->mutable_stamp()->set_nsec(ts.tv_nsec);
         // Type
-        pb->set_type(iit::advr::Ec_slave_pdo::TX_XT_MOTOR);
+        pb->set_type(iit::advr::Ec_slave_pdo::DUMMY);
         // 
-        pb->mutable_motor_xt_tx_pdo()->set_pos_ref(0.0);
-        pb->mutable_motor_xt_tx_pdo()->set_tor_ref(0.0);
-        pb->mutable_motor_xt_tx_pdo()->set_vel_ref(0.0);
-        pb->mutable_motor_xt_tx_pdo()->set_gain_0 (0.01);
-        pb->mutable_motor_xt_tx_pdo()->set_gain_1 (0.01);
-        pb->mutable_motor_xt_tx_pdo()->set_gain_2 (0.01);
-        pb->mutable_motor_xt_tx_pdo()->set_gain_3 (0.01);
-        pb->mutable_motor_xt_tx_pdo()->set_gain_4 (0.01);
-        pb->mutable_motor_xt_tx_pdo()->set_fault_ack(0);
-        pb->mutable_motor_xt_tx_pdo()->set_ts(uint32_t(iit::ecat::get_time_ns()/1000));        
+        //pb->mutable_dummy_pdo()->set_vect_f(0,0);
+
+      
         
     }
     
-    
-    
     void iddp_pipe_init ()
     {
-
-       string pipe_name,not_used;
-       int id;
-      
-       // bind rd iddp
-       for (std::vector<std::tuple<int, std::string, std::string>>::const_iterator i = rd_wr_motor_pdo.begin(); i != rd_wr_motor_pdo.end(); ++i) {
-            id=         get<0>(*i);
-            pipe_name=  get<1>(*i);
-            not_used=   get<2>(*i);
+        // bind rd iddp
+        for ( const auto& [id, pipe_name, not_used] : rd_wr_motor_pdo ) {
             rd_iddp[id] = IDDP_pipe();
             rd_iddp[id].bind(pipe_name, POOL_SIZE);
-       }
+        }
         
         // 
-        for (std::vector<std::tuple<int, std::string, std::string>>::const_iterator i = rd_wr_motor_pdo.begin(); i != rd_wr_motor_pdo.end(); ++i) {
-            id=         get<0>(*i);
-            pipe_name=  get<1>(*i);
-            not_used=   get<2>(*i);
+        for ( const auto& [id, pipe_name, not_used] : rd_wr_motor_pdo ) {
             pb_rx_pdos[id] = iit::advr::Ec_slave_pdo();
             pb_tx_pdos[id] = iit::advr::Ec_slave_pdo();
         }
         
         // connect wr iddp
-        for (std::vector<std::tuple<int, std::string, std::string>>::const_iterator i = rd_wr_motor_pdo.begin(); i != rd_wr_motor_pdo.end(); ++i) {
-            id=        get<0>(*i);
-            not_used=  get<1>(*i);
-            pipe_name= get<2>(*i);
+        for ( const auto& [id, not_used, pipe_name] : rd_wr_motor_pdo ) {
             wr_iddp[id] = IDDP_pipe();
             wr_iddp[id].connect(pipe_name);
         }
 
         // sanity check
-        assert(pb_tx_pdos.size() == pb_rx_pdos.size());     
+        assert(rd_iddp.size() == wr_iddp.size() == pb_tx_pdos.size() == pb_rx_pdos.size());    
     }
     
     
@@ -219,6 +199,8 @@ public:
         tNow, tPre = start_time;
         loop_cnt = 0;
         
+        pb_cmd_reply.Clear();
+        
         // bind xddp pipes
         rd_xddp.bind(rd_pipe);
         wr_xddp.bind(wr_pipe);
@@ -234,7 +216,7 @@ public:
     {
         int rd_bytes_from_nrt, rd_bytes_from_rt, wr_bytes_to_rt;
         int msg_size;
-        static float start_pos, ref;
+        
         static float ds = 0.001;
         
         tNow = iit::ecat::get_time_ns();
@@ -269,8 +251,6 @@ public:
                                 {
                                     rpipe_name=pipe_name+to_string(key)+"_tx_pdo";
                                     wpipe_name=pipe_name+to_string(key)+"_rx_pdo";
-                                    cout << "Creating reading pipe: " << rpipe_name << endl;
-                                    cout << "Creating writing pipe: " << wpipe_name << endl;
                                     rd_wr_motor_pdo.push_back(std::make_tuple(key, rpipe_name, wpipe_name));
                                 }
                             }
@@ -284,75 +264,52 @@ public:
         
         if(STATUS==1)
         {
-            IDDP_pipe pipe;
-            int id;
-            
             iddp_pipe_init();
             STATUS=2;
-            
-            for ( auto const& item : pb_rx_pdos){
-                
-                id=item.first; 
-                cout << "ID: " << id << "Ref_pos: " << ref << endl;
-                set_first_motor_pdo(id);
-            }
-            
-        
-            // *******************MOVE********************************* 
-            
-
-            //for ( auto& [id, pipe] : wr_iddp ) 
-            for ( auto const& item : wr_iddp){
-                id=item.first; 
-                pipe=item.second;
-                write_pb_to(pipe, pb_buf, &pb_tx_pdos[id], name);
-            }
-                
+            first_time=true;
         }
+        
         
         if(STATUS==2)
         {
-            IDDP_pipe pipe;
-            int id;
+        
             // *******************SENSE*********************************         
             
-            //for ( auto& [id, pipe] : rd_iddp )
-            for ( auto const& item : rd_iddp){
-                id=item.first; 
-                pipe=item.second;
-                do {
-                    rd_bytes_from_rt = read_pb_from(pipe, pb_buf, &pb_rx_pdos[id], name);
-                    // at least check faults on multiple reads ...
-                } while (rd_bytes_from_rt > 0);
+            for ( auto& [id, pipe] : rd_iddp ){
+                    do {
+                        rd_bytes_from_rt = read_pb_from(pipe, pb_buf, &pb_rx_pdos[id], name);
+                        // at least check faults on multiple reads ...
+                    } while (rd_bytes_from_rt > 0);
             }
             
-            for ( auto const& item : pb_rx_pdos){
+            for ( auto& [id,not_used]: pb_rx_pdos){
                 
-                id=item.first; 
-                start_pos = pb_rx_pdos[id].mutable_motor_xt_rx_pdo()->motor_pos();
-                ref = start_pos;
-                cout << "ID: " << id << "Ref_pos: " << ref << endl;
-//                 if(id==99)
-//                 {
-//                     if ( ref > start_pos + 0.5) {
-//                         ds = -0.001;    
-//                     }
-//                     if ( ref < start_pos - 0.5) {
-//                         ds = 0.001;
-//                     }
-//                     ref += ds; 
-//                 }
-                set_motor_pdo(id, ref );
+                if(first_time)
+                {
+                    start_pos[id] = pb_rx_pdos[id].mutable_motor_xt_rx_pdo()->motor_pos();
+                    ref[id] = start_pos[id];
+                } 
+                if(!first_time)
+                {
+                    if((id!=12)&&(id!=13))
+                    {
+                        if ( ref[id] > start_pos[id] + 0.5) {
+                            ds = -0.001;    
+                        }
+                        if ( ref[id] < start_pos[id] - 0.5) {
+                            ds = 0.001;
+                        }
+                        ref[id] += ds; 
+                    }
+                }
+                set_motor_pdo(id, ref[id]);
             }
             
         
             // *******************MOVE********************************* 
             
 
-            //for ( auto& [id, pipe] : wr_iddp ) 
-            for ( auto const& item : wr_iddp){
-                id=item.first; 
-                pipe=item.second;
+            for ( auto& [id, pipe] : wr_iddp ){ 
                 write_pb_to(pipe, pb_buf, &pb_tx_pdos[id], name);
             }
                 
@@ -361,7 +318,9 @@ public:
                 //write_pb_to(wr_xddp, pb_buf, &pb_repl_cmd, name);
             }
         }
-        
+        if(loop_cnt>10000)
+                first_time=false;
+             
     }
 
     
