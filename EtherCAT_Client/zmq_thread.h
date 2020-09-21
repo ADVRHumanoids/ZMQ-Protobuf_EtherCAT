@@ -182,19 +182,30 @@ public:
                                     if(ival==21)
                                         id_v.push_back(key);
                             STATUS=1;
-                            id_start=0; 
                         }
                         
                     }
                 }
             }
         }
-       
+        
+        // SEND ID's to RT Thread STATUS    
+        
         if(STATUS==1)
         {
+            ///////////////////////////////////////////////////////////////////////
+            // 1 : write to RT
+            nbytes_wr = write_to_RT(&pb_reply_RT);
+            ///////////////////////////////////////////////////////////////////////
+            STATUS=2;
+            id_start=0;
             // 4 : read from RT -- BLOCKING
-            //nbytes_rd = read_from_RT(&pb_cmd);
-            
+            nbytes_rd = read_from_RT(&pb_cmd);
+        }
+        
+       
+        if(STATUS==2)
+        {
             m_cmd="ESC_CMD";
             pb_cmd.set_type(CmdType::CTRL_CMD);
             pb_cmd.mutable_ctrl_cmd()->set_type(Ctrl_cmd::CTRL_CMD_START);
@@ -218,7 +229,7 @@ public:
                  }
                  else
                  {
-                    STATUS=2;  /// ERROR
+                    STATUS=3;  /// ERROR
                     cout << "-------------ERROR During the start time for the motors------" << endl;
                  }
                     
@@ -226,22 +237,18 @@ public:
             }
             if(id_start==id_v.size())
             {
-                STATUS=3;  // CONTINUE
+                STATUS=4;  // CONTINUE
                 cout << "-------------ALL MOTORS STARTED------" << endl;
+                ///////////////////////////////////////////////////////////////////////
+                // 1 : write to RT
+                pb_reply.set_type(Cmd_reply::ACK);
+                pb_reply.set_cmd_type(CmdType::CTRL_CMD);
+                nbytes_wr = write_to_RT(&pb_reply);
+                ///////////////////////////////////////////////////////////////////////
             }
         
         }
         
-         // SEND ID's to RT Thread STATUS    
-        
-        if((STATUS==3)&&(loop_cnt>10000))
-        {
-            ///////////////////////////////////////////////////////////////////////
-            // 1 : write to RT
-            nbytes_wr = write_to_RT(&pb_reply_RT);
-            ///////////////////////////////////////////////////////////////////////
-            STATUS=4;
-        }
         
         //if ( nbytes_rd > 0 && nbytes_wr > 0 ) {
         //    DPRINTF("_-_-_-_-_-_-_-_-_-_-_-_-_-_-_\n");

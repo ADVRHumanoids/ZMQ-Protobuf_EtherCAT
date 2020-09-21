@@ -71,7 +71,7 @@ private:
     
     iit::ecat::stat_t   s_loop;
     uint64_t            start_time, tNow, tPre;
-    uint64_t            loop_cnt;
+    uint64_t            loop_cnt,pipe_mechanism_timer,wait_start_motor;
     
     std::string         rd_pipe, wr_pipe;
     XDDP_pipe           rd_xddp, wr_xddp;
@@ -80,16 +80,22 @@ private:
     std::map<int, IDDP_pipe>    rd_iddp, wr_iddp;
     
     iit::advr::Cmd_reply                    pb_cmd_reply;
+    iit::advr::Repl_cmd                     pb_repl_cmd;
     std::map<int, iit::advr::Ec_slave_pdo>  pb_rx_pdos;
     std::map<int, iit::advr::Ec_slave_pdo>  pb_tx_pdos;
     
-    uint8_t                                 pb_buf[MAX_PB_SIZE];   
+    uint8_t                                 pb_buf[MAX_PB_SIZE]; 
+
     YAML::Node slaves_info;
+    std::map<int,std::map<std::string,int>> slave_info_map;
+    string pipe_name="NoNe@Motor_id_",rpipe_name,wpipe_name;
     int STATUS;
-    std::map <int,float> start_pos,ref;
+    
     
     Repl_cmd  pb_cmd;
-    bool first_time;
+    bool start_traj,start_motor;
+    
+    std::map<int,float> start_pos,ref;
     
     void  set_motor_pdo(int id, float pos)
     {
@@ -138,24 +144,38 @@ private:
     {
         // bind rd iddp
         for ( const auto& [id, pipe_name, not_used] : rd_wr_motor_pdo ) {
+            if(id==15)
+            {
             rd_iddp[id] = IDDP_pipe();
             rd_iddp[id].bind(pipe_name, POOL_SIZE);
+            }
         }
-        
+    
         // 
         for ( const auto& [id, pipe_name, not_used] : rd_wr_motor_pdo ) {
+            if((id==15))
+            {
             pb_rx_pdos[id] = iit::advr::Ec_slave_pdo();
             pb_tx_pdos[id] = iit::advr::Ec_slave_pdo();
+            }
+            
         }
         
         // connect wr iddp
         for ( const auto& [id, not_used, pipe_name] : rd_wr_motor_pdo ) {
+            if(id==15)
+            {
             wr_iddp[id] = IDDP_pipe();
             wr_iddp[id].connect(pipe_name);
+            start_pos[id]=0.0;
+            ref[id]=0.0;
+            }
         }
+        
 
         // sanity check
-        assert(rd_iddp.size() == wr_iddp.size() == pb_tx_pdos.size() == pb_rx_pdos.size());    
+        DPRINTF("Sizes: [%ld] [%ld] [%ld] [%ld]", rd_iddp.size(),wr_iddp.size(),pb_tx_pdos.size(),pb_rx_pdos.size());
+        //assert(rd_iddp.size() == wr_iddp.size() == pb_tx_pdos.size() == pb_rx_pdos.size());    
     }
     
     
@@ -182,10 +202,6 @@ public:
         priority = sched_get_priority_max ( schedpolicy ) / 2;
         stacksize = 0; // not set stak size !!!! YOU COULD BECAME CRAZY !!!!!!!!!!!!
         
-       
-       string rd_name,wr_name;
-       int id;
-      
     }
 
     ~RT_motor_thread()
@@ -198,8 +214,11 @@ public:
         start_time = iit::ecat::get_time_ns();
         tNow, tPre = start_time;
         loop_cnt = 0;
+        pipe_mechanism_timer=0;
+        wait_start_motor=0;
         
         pb_cmd_reply.Clear();
+        pb_repl_cmd.Clear();
         
         // bind xddp pipes
         rd_xddp.bind(rd_pipe);
@@ -207,8 +226,7 @@ public:
         
         pthread_barrier_wait(&threads_barrier);
         
-       string pipe_name,not_used;
-       int id;  
+        
        STATUS=0;
     }
     
@@ -218,7 +236,7 @@ public:
         int msg_size;
         
         static float ds = 0.001;
-        
+
         tNow = iit::ecat::get_time_ns();
         s_loop ( tNow - tPre );
         tPre = tNow;
@@ -226,6 +244,7 @@ public:
         loop_cnt++;
         
         // 2 : read from NRT
+        
         rd_bytes_from_nrt = read_pb_from(rd_xddp, pb_buf, &pb_cmd_reply, name);
 
         if(STATUS==0)  // status check ids for motor 
@@ -237,12 +256,9 @@ public:
                     if(pb_cmd_reply.cmd_type()==CmdType::ECAT_MASTER_CMD)
                     {
                         slaves_info = YAML::Load(pb_cmd_reply.msg().c_str());
-                        
-                        auto slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
-                        string pipe_name="NoNe@Motor_id_";
-                        string rpipe_name="";
-                        string wpipe_name="";
-
+                        slave_info_map=slaves_info.as<std::map<int,std::map<std::string,int>>>();
+                        rpipe_name="";
+                        wpipe_name="";
                         for(auto [key,val]:slave_info_map)
                         {
                             for(auto [ikey,ival]:val)
@@ -256,7 +272,7 @@ public:
                             }
                         }
                         
-                        STATUS=1;    
+                        STATUS=1;                         
                     }
                 } 
             }    
@@ -264,11 +280,15 @@ public:
         
         if(STATUS==1)
         {
-            iddp_pipe_init();
+         
             STATUS=2;
-            first_time=true;
+            iddp_pipe_init();
+            pipe_mechanism_timer=0;
+            start_traj=false;
+            start_motor=false;
         }
         
+
         
         if(STATUS==2)
         {
@@ -284,14 +304,15 @@ public:
             
             for ( auto& [id,not_used]: pb_rx_pdos){
                 
-                if(first_time)
+                if(!start_traj)
                 {
                     start_pos[id] = pb_rx_pdos[id].mutable_motor_xt_rx_pdo()->motor_pos();
                     ref[id] = start_pos[id];
                 } 
-                if(!first_time)
+
+                if(start_traj)
                 {
-                    if((id!=12)&&(id!=13))
+                    if(id==15)
                     {
                         if ( ref[id] > start_pos[id] + 0.5) {
                             ds = -0.001;    
@@ -302,27 +323,42 @@ public:
                         ref[id] += ds; 
                     }
                 }
+                
                 set_motor_pdo(id, ref[id]);
             }
-            
-        
+
             // *******************MOVE********************************* 
-            
 
             for ( auto& [id, pipe] : wr_iddp ){ 
                 write_pb_to(pipe, pb_buf, &pb_tx_pdos[id], name);
             }
-                
-            if ( rd_bytes_from_nrt > 0 ) {
-                // 3 : write to NRT
-                //write_pb_to(wr_xddp, pb_buf, &pb_repl_cmd, name);
-            }
-        }
-        if(loop_cnt>10000)
-                first_time=false;
+        
+            if(pipe_mechanism_timer>1000)
+                start_motor=true;
+            else
+                pipe_mechanism_timer++;
              
-    }
+        }
 
+        //if ( rd_bytes_from_nrt > 0 ) 
+        if(start_motor){
+            pb_repl_cmd.set_type(CmdType::CTRL_CMD);
+            pb_repl_cmd.mutable_ctrl_cmd()->set_type(Ctrl_cmd::CTRL_CMD_START);
+            pb_repl_cmd.mutable_ctrl_cmd()->set_board_id(11);
+            // 3 : write to NRT
+            write_pb_to(wr_xddp, pb_buf, &pb_repl_cmd, name);
+        }
+         
+        if(pb_cmd_reply.type()==Cmd_reply::ACK)
+        {
+            if(pb_cmd_reply.cmd_type()==CmdType::CTRL_CMD)
+            {
+                start_traj=true;
+                start_motor=false;
+            }
+                
+        }
+    }
     
 };
 
