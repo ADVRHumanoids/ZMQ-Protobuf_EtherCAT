@@ -182,6 +182,7 @@ public:
                                     if(ival==21)
                                         id_v.push_back(key);
                             STATUS=1;
+                            id_start=0;
                         }
                         
                     }
@@ -189,22 +190,62 @@ public:
             }
         }
         
+        if(STATUS==1)
+        {
+            m_cmd="ESC_CMD";
+            pb_cmd.set_type(CmdType::CTRL_CMD);
+            pb_cmd.mutable_ctrl_cmd()->set_type(Ctrl_cmd::CTRL_CMD_STOP);
+            pb_cmd.mutable_ctrl_cmd()->set_board_id(id_v[id_start]);
+        
+            pb_cmd.SerializeToString(&pb_msg_serialized);
+            multipart.push(message_t(pb_msg_serialized.c_str(), pb_msg_serialized.length()));
+            multipart.push(message_t(m_cmd.c_str(), m_cmd.length()));
+            multipart.send(publisher,ZMQ_NOBLOCK);
+            if(publisher.recv(&update))
+            {
+                pb_reply.ParseFromArray(update.data(),update.size());
+                 if(pb_reply.type()==Cmd_reply::ACK)
+                 {
+                    if(pb_reply.cmd_type()==CmdType::CTRL_CMD)
+                        id_start=id_start+1;
+                 }
+                 else
+                 {
+                     if(id_v[id_start]==14)
+                         id_start=id_start+1;
+                     else
+                     {
+                        STATUS=99;  /// ERROR
+                        cout << "-------------ERROR During the stopping time for the motors------" << endl;
+                     }
+                 }
+                    
+
+            }
+            if(id_start==id_v.size())
+            {
+                STATUS=2;  // CONTINUE
+                cout << "-------------ALL MOTORS STOPPED------" << endl;
+            }
+        
+        }
+        
         // SEND ID's to RT Thread STATUS    
         
-        if(STATUS==1)
+        if(STATUS==2)
         {
             ///////////////////////////////////////////////////////////////////////
             // 1 : write to RT
             nbytes_wr = write_to_RT(&pb_reply_RT);
             ///////////////////////////////////////////////////////////////////////
-            STATUS=2;
+            STATUS=3;
             id_start=0;
             // 4 : read from RT -- BLOCKING
             nbytes_rd = read_from_RT(&pb_cmd);
         }
         
        
-        if(STATUS==2)
+        if(STATUS==3)
         {
             m_cmd="ESC_CMD";
             pb_cmd.set_type(CmdType::CTRL_CMD);
@@ -229,8 +270,13 @@ public:
                  }
                  else
                  {
-                    STATUS=3;  /// ERROR
-                    cout << "-------------ERROR During the start time for the motors------" << endl;
+                     if(id_v[id_start]==14)
+                         id_start=id_start+1;
+                     else
+                     {
+                        STATUS=99;  /// ERROR
+                        cout << "-------------ERROR During the stopping time for the motors------" << endl;
+                     }
                  }
                     
 
