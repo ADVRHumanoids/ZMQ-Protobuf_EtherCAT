@@ -144,7 +144,7 @@ private:
     {
         // bind rd iddp
         for ( const auto& [id, pipe_name, not_used] : rd_wr_motor_pdo ) {
-            if(id==15)
+            if(id==12)
             {
             rd_iddp[id] = IDDP_pipe();
             rd_iddp[id].bind(pipe_name, POOL_SIZE);
@@ -153,7 +153,7 @@ private:
     
         // 
         for ( const auto& [id, pipe_name, not_used] : rd_wr_motor_pdo ) {
-            if((id==15))
+            if(id==12)
             {
             pb_rx_pdos[id] = iit::advr::Ec_slave_pdo();
             pb_tx_pdos[id] = iit::advr::Ec_slave_pdo();
@@ -163,7 +163,7 @@ private:
         
         // connect wr iddp
         for ( const auto& [id, not_used, pipe_name] : rd_wr_motor_pdo ) {
-            if(id==15)
+            if(id==12)
             {
             wr_iddp[id] = IDDP_pipe();
             wr_iddp[id].connect(pipe_name);
@@ -235,7 +235,7 @@ public:
         int rd_bytes_from_nrt, rd_bytes_from_rt, wr_bytes_to_rt;
         int msg_size;
         
-        static float ds = 0.001;
+        static float ds = 0.0001;
 
         tNow = iit::ecat::get_time_ns();
         s_loop ( tNow - tPre );
@@ -312,12 +312,12 @@ public:
 
                 if(start_traj)
                 {
-                    if(id==15)
+                    if((id==11)||(id==12)||(id==13)||(id==15))
                     {
-                        if ( ref[id] > start_pos[id] + 0.5) {
+                        if ( ref[id] > (start_pos[id] + 0.5)) {
                             ds = -0.001;    
                         }
-                        if ( ref[id] < start_pos[id] - 0.5) {
+                        if ( ref[id] < (start_pos[id] - 0.5)) {
                             ds = 0.001;
                         }
                         ref[id] += ds; 

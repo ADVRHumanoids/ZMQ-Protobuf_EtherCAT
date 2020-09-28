@@ -275,7 +275,7 @@ public:
                      else
                      {
                         STATUS=99;  /// ERROR
-                        cout << "-------------ERROR During the stopping time for the motors------" << endl;
+                        cout << "-------------ERROR During the starting time for the motors------" << endl;
                      }
                  }
                     
